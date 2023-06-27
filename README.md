@@ -1,3 +1,37 @@
-Code and models for the paper [`Adapting Language Models to Compress Long Contexts`](https://arxiv.org/abs/2305.14788) coming soon...
+# Adapting Language Models to Compress Long Contexts
 
-> Transformer-based language models (LMs) are powerful and widely-applicable tools, but their usefulness is constrained by a finite context window and the expensive computational cost of processing long text documents. We propose to adapt pre-trained LMs into AutoCompressors. These models are capable of compressing long contexts into compact summary vectors, which are then accessible to the model as soft prompts. Summary vectors are trained with an unsupervised objective, whereby long documents are processed in segments and summary vectors from all previous segments are used in language modeling. We fine-tune OPT models on sequences of up to 30,720 tokens and show that AutoCompressors can utilize long contexts to improve perplexity. We evaluate AutoCompressors on in-context learning by compressing task demonstrations. We find that summary vectors are good substitutes for plain-text demonstrations, increasing accuracy while reducing inference cost. Finally, we explore the benefits of pre-computing summary vectors for large corpora by applying summary vectors to retrieval-augmented language modeling. Overall, AutoCompressors emerge as a simple and inexpensive solution for extending the context window of LMs while speeding up inference over long contexts.
+This is the official implementation of the paper [`Adapting Language Models to Compress Long Contexts`](https://arxiv.org/abs/2305.14788).
+
+![](assets/architecture.png)
+
+### Install
+Setup a new environment and install the most recent version of [pytorch](https://pytorch.org/),
+followed by these libraries
+```
+pip install transformers==4.28.1 datasets==2.11.0 wandb
+```
+
+### Training
+`train.sh` is the main method for training AutoCompressors.
+It features the most important hyperparameters for training and
+shows an example of how to call `train.py`.
+You may have to some hyperparameters, like the number GPUs, depending on the system.
+The script should be easy to start with, since it uses pre-tokenized datasets from the huggingface hub.
+
+### Pre-trained models
+Coming soon...
+
+## Bug or Questions?
+If you have any questions related to the code or the paper, feel free to email
+Alexis and Alexander (`achevalier@ias.edu, awettig@cs.princeton.edu`).
+If you encounter a problem or bug when using the code, you can open an issue.
+Please try to specify the problem with detail so we can help you quickly!
+
+## Citation
+```bibtex
+@article{chevalier2023adapting,
+   title={Adapting Language Models to Compress Contexts},
+   author={Chevalier, Alexis and Wettig, Alexander and Ajith, Anirudh and Chen, Danqi},
+   year={2023}
+}
+```
