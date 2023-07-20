@@ -18,6 +18,8 @@ shows an example of how to call `train.py`.
 You may have to some hyperparameters, like the number GPUs, depending on the system.
 The script should be easy to start with, since it uses pre-tokenized datasets from the huggingface hub.
 
+We implement flash attention via `torch.nn.functional.scaled_dot_product_attention`, which you can use by adding `--fast_attention` to `train.sh`. This lowers the GPU memory requirements during training substantially. Note that this is experimental and requires the preview version of pytorch. We have encountered some issues with using fast attention during evaluation, especially with `use_cache=True`, so we recommend only using the fast attention during training.
+
 ### Pre-trained models
 Coming soon...
 
