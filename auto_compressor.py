@@ -198,16 +198,11 @@ class AutoCompressorModel(OPTForCausalLM):
                                         inputs_embeds.size(1) + past_key_values_length,
                                         dtype=torch.long, device=inputs_embeds.device)
 
-        if getattr(self.config, "separate_summary_embeds", False):
-            if self.config.summary_length > 0:
-                placeholder_ids = torch.arange(self.config.summary_length, dtype=torch.long, device=inputs_embeds.device).unsqueeze(0).expand(inputs_embeds.size(0), -1)
-                placeholder_embeds = self.embed_summary(placeholder_ids)
-            else:
-                placeholder_embeds = inputs_embeds[:,:0]
+        if self.config.summary_length > 0:
+            placeholder_ids = torch.arange(self.config.summary_length, dtype=torch.long, device=inputs_embeds.device).unsqueeze(0).expand(inputs_embeds.size(0), -1)
+            placeholder_embeds = self.embed_summary(placeholder_ids)
         else:
-            placeholder_ids = torch.arange(self.config.vocab_size - self.config.summary_length, self.config.vocab_size, device=inputs_embeds.device, dtype=torch.long)
-            placeholder_ids = placeholder_ids.unsqueeze(0).expand(inputs_embeds.size(0), self.config.summary_length)
-            placeholder_embeds = self.get_input_embeddings()(placeholder_ids)
+            placeholder_embeds = inputs_embeds[:,:0]
 
         inputs_embeds_list = torch.split(inputs_embeds, segment_lengths, dim=1)
         attention_mask_list = torch.split(attention_mask[:, past_key_values_length:], segment_lengths, dim=1)
