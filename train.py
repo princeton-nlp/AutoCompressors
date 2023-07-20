@@ -25,6 +25,8 @@ from utils import get_last_checkpoint_or_last_model, parse_checkpoint_step
 
 from data import load_raw_dataset, preprocess_datasets, load_preprocessed_datasets
 
+from fast_attention import patch_opt
+
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.22.0")
 
@@ -152,6 +154,9 @@ def main():
         model.config.max_position_embeddings = max_pos * multiply
         logger.info(f"Positional embeddings increased to {embed.num_embeddings}")
 
+    if training_args.fast_attention:
+        logger.info("Patching (experimental) fast attention")
+        patch_opt(model)
 
     # load_datasets
     if not training_args.do_train:

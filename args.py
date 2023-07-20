@@ -38,6 +38,10 @@ class TrainingArguments(HfTrainingArguments):
         default=False,
         metadata={"help": "If True, gradient checkpointing will be used after each segment."}
     )
+    fast_attention: bool = field(
+        default=False,
+        metadata={"help": "Use fast attention during training (experimental)"}
+    )
 
 
 @dataclass
