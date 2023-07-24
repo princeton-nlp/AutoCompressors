@@ -42,7 +42,7 @@ print("Next token w/o context:\n" + prompt + tokenizer.decode(next_token_without
 ### Install
 Setup a new environment and install the most recent version of [pytorch](https://pytorch.org/),
 followed by these libraries
-```
+```bash
 pip install transformers==4.28.1 datasets==2.11.0 wandb
 ```
 
@@ -89,6 +89,7 @@ Please try to specify the problem with detail so we can help you quickly!
 @article{chevalier2023adapting,
    title={Adapting Language Models to Compress Contexts},
    author={Chevalier, Alexis and Wettig, Alexander and Ajith, Anirudh and Chen, Danqi},
+   journal={arXiv preprint 2305.14788},
    year={2023}
 }
 ```
