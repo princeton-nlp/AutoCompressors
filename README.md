@@ -1,10 +1,12 @@
-<p align="center">
-<img src="assets/architecture.png" width="250">
-</p>
-
 # Adapting Language Models to Compress Long Contexts
 
-This is the official implementation of the paper [`Adapting Language Models to Compress Long Contexts`](https://arxiv.org/abs/2305.14788), in which we train *AutoCompressors* which are language models with the new capability to (1) compress context information into a small set of summary vectors and (2) reason over these summary vectors which are passed to the model as soft prompts.
+This is the official implementation of the paper [Adapting Language Models to Compress Long Contexts](https://arxiv.org/abs/2305.14788), in which we train *AutoCompressors* which are language models with the new capability to (1) compress context information into a small set of summary vectors and (2) reason over these summary vectors which are passed to the model as soft prompts.
+
+<br>
+<p align="center">
+<img src="assets/architecture.png" width="500">
+</p>
+<br>
 
 Example use of the API with a pre-trained AutoCompressor model:
 ```python
