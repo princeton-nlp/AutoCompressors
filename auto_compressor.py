@@ -224,13 +224,13 @@ class AutoCompressorModel(OPTForCausalLM):
                 getattr(self.config, "segment_gradient_checkpointing", False) and
                 self.training and not is_last_step)
 
+            softprompt_length = softprompt.size(1)
+            summary_length = placeholder_embeds.size(1)
+            
             outputs = self.forward_segment(
                 softprompt, segment_embeds, placeholder_embeds, segment_attention_mask,
                 past_key_values, output_hidden_states, use_cache, output_attentions,
                 segment_gradient_checkpointing)
-
-            softprompt_length = self.summary_config.softprompt_length
-            summary_length = self.summary_config.summary_length
 
             total_length = outputs.last_hidden_state.size(1)
             segment_last_hiddens = (
