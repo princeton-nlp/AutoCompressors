@@ -42,6 +42,7 @@ from transformers.utils import (
     is_torch_tpu_available,
 )
 from transformers.trainer_pt_utils import get_module_class_from_name
+import time
 
 from transformers.deepspeed import deepspeed_init, is_deepspeed_zero3_enabled
 from peft import PeftModel
@@ -70,43 +71,64 @@ OPTIMIZER_NAME = "optimizer.pt"
 SCHEDULER_NAME = "scheduler.pt"
 SCALER_NAME = "scaler.pt"
 
-
 class LogCallback(TrainerCallback):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.start_time = time.time()
+        self.last_log_time = self.start_time
+        self.log_time_interval = 0
+        self.current_step = 0
+        self.is_training = False
+        self.max_steps = -1
+        self.first_step_of_run = 0
+
+    def on_train_begin(self, args, state, control, **kwargs):
+        if state.is_local_process_zero:
+            if self.log_time_interval > 0:
+                logger.info(f"Using log_time_interval {self.log_time_interval} s. This will override logging_steps and logging_strategy.")
+            self.is_training = True
+            self.current_step = 0
+            self.start_time = time.time()
+            self.last_log_time = self.start_time
+            self.max_steps = state.max_steps
+            self.first_step_of_run = state.global_step
+        if torch.distributed.is_initialized():
+            torch.distributed.barrier()
+
     def on_log(self, args, state, control, logs=None, **kwargs):
         _ = logs.pop("total_flos", None)
         if state.is_local_process_zero:
-            logger.info(str(logs))
+            if self.is_training:
+                current_time = time.time()
+                time_diff = current_time - self.last_log_time
+                force = logs.get("force", False)
+                if time_diff > self.log_time_interval or self.current_step >= self.max_steps - 1 or force:
+                    self.last_log_time = current_time
+                    steps_completed = max(self.current_step, 1)
+                    steps_since_first = max(1, self.current_step - self.first_step_of_run)
+                    remaining_steps = self.max_steps - steps_completed
+                    pct_completed = (steps_completed / self.max_steps) * 100
+                    time_since_start = current_time - self.start_time
+                    remaining_time = (time_since_start / steps_since_first) * remaining_steps
+                    update = {'completed': f'{pct_completed:.2f}% ({steps_completed:_} / {self.max_steps:_})', 'remaining time': self.format_duration(remaining_time)}
+                    logger.info(str({**logs, **update}))
+            else:
+                logger.info(str(logs))
 
+    def on_step_end(self, args, state, control, **kwargs):
+        if state.is_local_process_zero:
+            self.current_step = state.global_step
 
-def fsdp_auto_wrap_policy(transformer_layer_cls):
-    import functools
+    def on_train_end(self, args, state, control, **kwargs):
+        if state.is_local_process_zero:
+            self.is_training = False
 
-    from torch.distributed.fsdp.wrap import _or_policy, lambda_auto_wrap_policy, transformer_auto_wrap_policy
+    @staticmethod
+    def format_duration(seconds):
+        hours, remainder = divmod(seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f'{int(hours)}:{int(minutes):02}:{int(seconds):02}'
 
-    from peft.tuners import PrefixEncoder, PromptEmbedding, PromptEncoder
-
-    def lambda_policy_fn(module):
-        if (
-            len(list(module.named_children())) == 0
-            and getattr(module, "weight", None) is not None
-            and module.weight.requires_grad
-        ):
-            return True
-        return False
-
-    lambda_policy = functools.partial(lambda_auto_wrap_policy, lambda_fn=lambda_policy_fn)
-    transformer_wrap_policy = functools.partial(
-        transformer_auto_wrap_policy,
-        transformer_layer_cls=(
-            PrefixEncoder,
-            PromptEncoder,
-            PromptEmbedding,
-            *transformer_layer_cls
-        ),
-    )
-
-    auto_wrap_policy = functools.partial(_or_policy, policies=[lambda_policy, transformer_wrap_policy])
-    return auto_wrap_policy
 
 
 class BaseTrainer(Trainer):
@@ -475,77 +497,3 @@ class BaseTrainer(Trainer):
             metrics = super().evaluate(eval_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
 
         return metrics
-
-
-
-    def _wrap_model(self, model, training=True, dataloader=None):
-        # Distributed training using PyTorch FSDP
-        if isinstance(model, PeftModel) and self.fsdp is not None and not self.args.fsdp_config["xla"]:
-            if self.args.torch_compile:
-                model = torch.compile(model, backend=self.args.torch_compile_backend, mode=self.args.torch_compile_mode)
-
-            if self.args.use_ipex:
-                dtype = torch.bfloat16 if self.use_cpu_amp else torch.float32
-                model = self.ipex_optimize_model(model, training, dtype=dtype)
-
-            # train/eval could be run multiple-times - if already wrapped, don't re-wrap it again
-            if unwrap_model(model) is not model:
-                return model
-
-            # Multi-gpu training (should be after apex fp16 initialization)
-            if self.args.n_gpu > 1:
-                model = nn.DataParallel(model)
-
-            # Note: in torch.distributed mode, there's no point in wrapping the model
-            # inside a DistributedDataParallel as we'll be under `no_grad` anyways.
-            if not training:
-                return model
-
-            # PyTorch FSDP!
-            from torch.distributed.fsdp.fully_sharded_data_parallel import CPUOffload, MixedPrecision
-            from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel as FSDP
-
-            if FSDPOption.OFFLOAD in self.args.fsdp:
-                cpu_offload = CPUOffload(offload_params=True)
-            else:
-                cpu_offload = CPUOffload(offload_params=False)
-
-            auto_wrap_policy = None
-
-            if FSDPOption.AUTO_WRAP in self.args.fsdp:
-                transformer_cls_to_wrap = set()
-                if self.args.fsdp_transformer_layer_cls_to_wrap is not None:
-                    transformer_cls = get_module_class_from_name(
-                        model, self.args.fsdp_transformer_layer_cls_to_wrap
-                    )
-                    if transformer_cls is None:
-                        raise Exception("Could not find the transformer layer class to wrap in the model.")
-                    else:
-                        transformer_cls_to_wrap.add(transformer_cls)
-
-                auto_wrap_policy = fsdp_auto_wrap_policy(transformer_cls_to_wrap)
-
-            mixed_precision_policy = None
-            dtype = None
-            if self.args.fp16:
-                dtype = torch.float16
-            elif self.args.bf16:
-                dtype = torch.bfloat16
-            if dtype is not None:
-                mixed_precision_policy = MixedPrecision(param_dtype=dtype, reduce_dtype=dtype, buffer_dtype=dtype)
-            if type(model) != FSDP:
-                # XXX: Breaking the self.model convention but I see no way around it for now.
-                self.model = model = FSDP(
-                    model,
-                    sharding_strategy=self.fsdp,
-                    cpu_offload=cpu_offload,
-                    auto_wrap_policy=auto_wrap_policy,
-                    mixed_precision=mixed_precision_policy,
-                    device_id=self.args.device,
-                    backward_prefetch=self.backward_prefetch,
-                    forward_prefetch=self.forward_prefetch,
-                    limit_all_gathers=self.limit_all_gathers,
-                )
-            return model
-        else:
-            return super()._wrap_model(model, training, dataloader)
