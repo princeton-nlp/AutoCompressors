@@ -99,6 +99,27 @@ class ModelArguments:
         },
     )
 
+    lora: bool = field(default=False, metadata={"help": "Whether to use parameter efficient fine-tuning."})
+    lora_path: str = field(default=None, metadata={"help": "Path to the lora model."})
+    lora_modules_to_save: Optional[List[str]] = field(
+        default=None,
+        metadata={
+            "help": "List of modules apart from LoRA layers to be set as trainable and saved in the final checkpoint. "
+            "For example, in Sequence Classification or Token Classification tasks, "
+            "the final layer `classifier/score` are randomly initialized and as such need to be trainable and saved."
+        },
+    )
+    lora_r: int = field(default=8, metadata={"help": "Lora attention dimension"})
+    lora_target_modules: List[str] = field(
+        default=None,
+        metadata={
+            "help": "List of module names or regex expression of the module names to replace with Lora."
+            "For example, ['q', 'v'] or '.*decoder.*(SelfAttention|EncDecAttention).*(q|v)$' "
+        },
+    )
+    lora_alpha: int = field(default=16, metadata={"help": "Lora alpha"})
+    lora_dropout: float = field(default=0.05, metadata={"help": "Lora dropout"})
+
 
 
 @dataclass
