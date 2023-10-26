@@ -1,7 +1,7 @@
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import os
 
 from base_trainer import BaseTrainer
-
 import math
 import torch
 from torch import nn
@@ -88,14 +88,18 @@ class SubstepTrainer(BaseTrainer):
 
         mask = (labels != -100).float()
         nlls = -log_p.gather(-1, labels.unsqueeze(-1).clamp(min=0)).squeeze(-1)
-        if mask.sum(-1) == 0:
-            # This deals with cases of empty segments due to padding, but can lead to inaccurate logging
-            metrics[f"{prefix}nll"] = torch.tensor(0.0, device=log_p.device)
-            metrics[f"{prefix}acc"] = torch.tensor(0.0, device=log_p.device)
-        else:
-            metrics[f"{prefix}nll"] = (nlls * mask).sum(-1) / mask.sum(-1)
-            correct = (log_p.argmax(-1) == labels).float()
-            metrics[f"{prefix}acc"] = (correct * mask).sum(-1) / mask.sum(-1)
+        # if mask.sum(-1) == 0:
+        #     # This deals with cases of empty segments due to padding, but can lead to inaccurate logging
+        #     metrics[f"{prefix}nll"] = torch.tensor(0.0, device=log_p.device)
+        #     metrics[f"{prefix}acc"] = torch.tensor(0.0, device=log_p.device)
+        # else:
+        #     metrics[f"{prefix}nll"] = (nlls * mask).sum(-1) / mask.sum(-1)
+        #     correct = (log_p.argmax(-1) == labels).float()
+        #     metrics[f"{prefix}acc"] = (correct * mask).sum(-1) / mask.sum(-1)
+            
+        metrics[f"{prefix}nll"] = (nlls * mask).sum(-1) / mask.sum(-1)
+        correct = (log_p.argmax(-1) == labels).float()
+        metrics[f"{prefix}acc"] = (correct * mask).sum(-1) / mask.sum(-1)
         return metrics
 
     def compute_loss(
@@ -105,7 +109,7 @@ class SubstepTrainer(BaseTrainer):
         return_outputs=False,
         return_output_and_metrics=False
         ):
-        """Computes the loss in terms of training blocks. Appropriate for logging during training."""
+        """Computes the loss in terms of training blocks. This function is only used during evaluation"""
 
         total_loss = 0
         softprompt = None
@@ -114,8 +118,12 @@ class SubstepTrainer(BaseTrainer):
             input_slice, segment_lengths = self.segment_input(inputs, substep)
             if torch.any((input_slice["labels"] != -100).sum(-1) == 0):
                 continue
-            out = model(**input_slice, softprompt=softprompt, segment_lengths=segment_lengths, use_cache=False, output_softprompt=True)
-            softprompt = out.softprompt
+            if os.getenv("FA_EVAL", False):         
+                out = model(**inputs, segment_lengths=sum(self.args.segment_lengths), use_cache=False)
+                softprompt = None
+            else:
+                out = model(**input_slice, softprompt=softprompt, segment_lengths=segment_lengths, use_cache=False, output_softprompt=True)
+                softprompt = out.softprompt
             loss = out.loss
             total_loss += loss
 
@@ -223,11 +231,19 @@ class SubstepTrainer(BaseTrainer):
 
     def segment_input(self, inputs, substep):
         """Returns the sliced inputs and the random segment lengths when randomize_substeps=True"""
+        
+        # if using segment_lenghts, keep only the end segment of the inputs. This is useful for evaluation. During training, segment lengths should sum to the total block_size
+        if not self.args.randomize_substeps:
+            total_length = sum(self.args.segment_lengths) * self.args.training_substeps
+            inputs["input_ids"] = inputs["input_ids"][:, -total_length:]
+            inputs["attention_mask"] = inputs["attention_mask"][:, -total_length:]
+            inputs["labels"] = inputs["labels"][:, -total_length:]
+
         slices = torch.linspace(0, inputs["input_ids"].shape[-1], steps=self.args.training_substeps + 1, device=inputs["input_ids"].device, dtype=torch.long)
         input_slice = {k: v[:, slices[substep]: slices[substep+1]] for k, v in inputs.items()}
         if self.args.randomize_substeps:
             segment_lengths = self.random_segment_lengths(input_slice["input_ids"], self.args.segments_per_substep)
         else:
-            segment_lengths = self.args.segment_length
+            segment_lengths = self.args.segment_lengths
 
         return input_slice, segment_lengths

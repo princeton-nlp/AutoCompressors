@@ -67,6 +67,43 @@ def main():
     )
     logger.info(f"Training/evaluation parameters {training_args}")
 
+
+
+    # load_datasets
+    if not training_args.do_train:
+        data_args.preprocessed_train_datasets = []
+
+    if data_args.preprocessed_train_datasets + data_args.preprocessed_validation_datasets:
+        print("train dataset", data_args.preprocessed_train_datasets)
+        print("validation dataset", data_args.preprocessed_validation_datasets)
+
+        lm_datasets = load_preprocessed_datasets(data_args, model_args)
+    else:
+        raw_datasets = load_raw_dataset(data_args, model_args)
+        lm_datasets = preprocess_datasets(raw_datasets, tokenizer, data_args, training_args)
+
+    if training_args.do_train:
+        if "train" not in lm_datasets:
+            raise ValueError("--do_train requires a train dataset")
+        train_dataset = lm_datasets["train"]
+        if data_args.max_train_samples is not None:
+            max_train_samples = min(len(train_dataset), data_args.max_train_samples)
+            train_dataset = train_dataset.select(range(max_train_samples))
+        print(f"Total number of training data: {len(train_dataset)}")
+
+    if training_args.do_eval:
+        # max eval sample deleted
+        eval_dataset = {}
+        for key in lm_datasets.keys():
+            if "validation" in key:
+                if data_args.max_eval_samples is not None:
+                    max_eval_samples = min(data_args.max_eval_samples, len(lm_datasets[key]))
+                    eval_dataset[key] = lm_datasets[key].select(range(max_eval_samples))
+                else:
+                    eval_dataset[key] = lm_datasets[key]
+
+
+
     # Detecting last checkpoint.
     last_checkpoint = None
     if training_args.resume_from_checkpoint:
@@ -124,6 +161,7 @@ def main():
 
     # Create model
     if "llama" in (model_args.model_name_or_path or model_args.config_name).lower():
+        config.rope_theta = model_args.rope_theta
         from auto_compressor_llama import AutoCompressorModel
     else:
         from auto_compressor import AutoCompressorModel
@@ -181,35 +219,7 @@ def main():
         logger.info("Patching (experimental) fast attention")
         patch_opt(model)
 
-    # load_datasets
-    if not training_args.do_train:
-        data_args.preprocessed_train_datasets = []
 
-    if data_args.preprocessed_train_datasets + data_args.preprocessed_validation_datasets:
-        lm_datasets = load_preprocessed_datasets(data_args, model_args)
-    else:
-        raw_datasets = load_raw_dataset(data_args, model_args)
-        lm_datasets = preprocess_datasets(raw_datasets, tokenizer, data_args, training_args)
-
-    if training_args.do_train:
-        if "train" not in lm_datasets:
-            raise ValueError("--do_train requires a train dataset")
-        train_dataset = lm_datasets["train"]
-        if data_args.max_train_samples is not None:
-            max_train_samples = min(len(train_dataset), data_args.max_train_samples)
-            train_dataset = train_dataset.select(range(max_train_samples))
-        print(f"Total number of training data: {len(train_dataset)}")
-
-    if training_args.do_eval:
-        # max eval sample deleted
-        eval_dataset = {}
-        for key in lm_datasets.keys():
-            if "validation" in key:
-                if data_args.max_eval_samples is not None:
-                    max_eval_samples = min(data_args.max_eval_samples, len(lm_datasets[key]))
-                    eval_dataset[key] = lm_datasets[key].select(range(max_eval_samples))
-                else:
-                    eval_dataset[key] = lm_datasets[key]
 
     tokenizer.padding = True
     # Initialize our Trainer
@@ -266,8 +276,10 @@ def main():
                 step = parse_checkpoint_step(last_checkpoint)
             else:
                 step = 0
-            trainer.log_metrics(f"eval_step{step}")
-            trainer.save_metrics(f"eval_step{step}")
+            segment_string = "-".join([str(i) for i in training_args.segment_lengths])
+            metrics["segment_lengths"] = segment_string
+            trainer.log_metrics(f"eval_step{step}_{segment_string}", metrics)
+            trainer.save_metrics(f"eval_step{step}_{segment_string}", metrics)
 
 
 if __name__ == "__main__":
