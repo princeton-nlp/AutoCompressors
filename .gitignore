@@ -1,3 +1,9 @@
 /.cache
 __pycache__/
 redpajama
+redpajama-weighted
+slurm
+preprocessed_*
+new_preprocessed_*
+.bash_aliases
+checkpoints

@@ -295,7 +295,6 @@ class LlamaAttention(nn.Module):
         q = q.view(*q.shape[:-1], self.num_heads, self.head_dim)
         k = k.view(*k.shape[:-1], self.num_key_value_heads, self.head_dim)
         v = v.view(*v.shape[:-1], self.num_key_value_heads, self.head_dim)
-
         q, k = self.rotary_emb(q, k, past_len)
 
         kv = torch.stack([k, v], -3)
@@ -515,7 +514,8 @@ class LlamaModel(LlamaPreTrainedModel):
             unpadded_lengths = (cu_seqlens, max_seqlen)
         else:
             unpadded_lengths = None
-
+        # unpadded_lengths = None
+        # print(hidden_states.shape)
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
