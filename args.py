@@ -21,21 +21,22 @@ class TrainingArguments(HfTrainingArguments):
         metadata={"help": "If True, summary tokens of all past segments will be accumulated "
                           "when passed to the next segment."}
     )
+
     training_substeps: Optional[int] = field(
         default=1,
         metadata={"help": "How often to detach gradients (1 substep=standard training)"}
-    )
-    segments_per_substep: int = field(
-        default=2,
-        metadata={"help": "Number of substeps per segments."}
     )
     randomize_substeps: Optional[bool] = field(
         default=False,
         metadata={"help": "apply  strategy to determine substep lengths in each substep"}
     )
+    segments_per_substep: int = field(
+        default=2,
+        metadata={"help": "Number of substeps per segments when using --randomize_substep"}
+    )
     segment_lengths: List[int] = field(
-        default_factory=list, 
-        metadata={"help": "Determines the compression pattern inside each substep. Used when no randomization is present."}
+        default_factory=list,
+        metadata={"help": "Max. number of tokens compressed per segment in a substep. Applies only when substeps are not randomized."}
     )
     segment_gradient_checkpointing: bool = field(
         default=False,
@@ -122,8 +123,6 @@ class ModelArguments:
     )
     lora_alpha: int = field(default=16, metadata={"help": "Lora alpha"})
     lora_dropout: float = field(default=0.05, metadata={"help": "Lora dropout"})
-
-    rope_theta: int = field(default=10000, metadata={"help": "theta value used for RoPE embeddings"})
 
 @dataclass
 class DataTrainingArguments:

@@ -36,7 +36,7 @@ class CausalACOutputWithPast(CausalLMOutputWithPast):
     softprompt_past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
 
 
-class AutoCompressorModel(LlamaForCausalLM):
+class LlamaAutoCompressorModel(LlamaForCausalLM):
 
     def __init__(self, config):
         super().__init__(config)
