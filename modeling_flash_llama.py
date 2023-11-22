@@ -635,7 +635,6 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        avg_valid_labels_per_chunk: Optional[float] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
         Args:
@@ -643,20 +642,14 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
                 Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
                 config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
                 (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
-
         Returns:
-
         Example:
-
         ```python
         >>> from transformers import AutoTokenizer, LlamaForCausalLM
-
         >>> model = LlamaForCausalLM.from_pretrained(PATH_TO_CONVERTED_WEIGHTS)
         >>> tokenizer = AutoTokenizer.from_pretrained(PATH_TO_CONVERTED_TOKENIZER)
-
         >>> prompt = "Hey, are you conscious? Can you talk to me?"
         >>> inputs = tokenizer(prompt, return_tensors="pt")
-
         >>> # Generate
         >>> generate_ids = model.generate(inputs.input_ids, max_length=30)
         >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
@@ -683,25 +676,20 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         )
 
         hidden_states = outputs[0]
+        logits = self.lm_head(hidden_states).float()
+
         loss = None
         if labels is not None:
-            # Only compute loss on tokens that contribute to loss
-            valid_prediction = (labels != -100)
-            hidden_states_ = hidden_states[valid_prediction]
-            logits = self.lm_head(hidden_states_).float()
-
-            # NOTE: We don't shift the labels inside the model here!
-            labels_ = labels[valid_prediction]
-
-            if avg_valid_labels_per_chunk is not None and avg_valid_labels_per_chunk > 0:
-                # Don't take mean since this will give unequal weight to GPUs with unequal amount of padding
-                loss = F.cross_entropy(logits, labels_, reduction="mean") * (labels_.numel() / avg_valid_labels_per_chunk)
-                if not valid_prediction.any():
-                    loss.data = torch.zeros_like(loss)
-            else:
-                loss = F.cross_entropy(logits, labels_, reduction="mean")
-        else:
-            logits = self.lm_head(hidden_states).float()
+            # Shift so that tokens < n predict n
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            # Flatten the tokens
+            loss_fct = CrossEntropyLoss()
+            shift_logits = shift_logits.view(-1, self.config.vocab_size)
+            shift_labels = shift_labels.view(-1)
+            # Enable model parallelism
+            shift_labels = shift_labels.to(shift_logits.device)
+            loss = loss_fct(shift_logits, shift_labels)
 
         if not return_dict:
             output = (logits,) + outputs[1:]
