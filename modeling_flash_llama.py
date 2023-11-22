@@ -173,21 +173,31 @@ class FlashRotaryEmbedding(torch.nn.Module):
                 self._cos_k_cached = (torch.cos(freqs) / scale).to(dtype)
                 self._sin_k_cached = (torch.sin(freqs) / scale).to(dtype)
 
-    def forward(self, q: torch.Tensor, k: torch.Tensor, seqlen_offset: int = 0) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self,
+                q: torch.Tensor, k: torch.Tensor,
+                seqlen_offset: int = 0,
+                unpadded_lengths: Optional[Tuple[torch.Tensor]] = None) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         q: (batch, seqlen, nheads, headdim)
         k: (batch, seqlen, nheads, headdim)
         seqlen_offset: can be used in generation where the qkv being passed in is only the last
         token in the batch.
         """
-        self._update_cos_sin_cache(q.shape[1] + seqlen_offset, device=q.device, dtype=q.dtype)
+        if unpadded_lengths is not None:
+            cu_seqlens, max_seqlen = unpadded_lengths
+        else:
+            cu_seqlens, max_seqlen = None, q.shape[1]
+        self._update_cos_sin_cache(max_seqlen + seqlen_offset, device=q.device, dtype=q.dtype)
+
         if self.scale is None:
             return apply_rotary_emb_func(
                 q, self._cos_cached[seqlen_offset:], self._sin_cached[seqlen_offset:],
-                self.interleaved, True # inplace=True
+                self.interleaved, True, # inplace=True,
+                cu_seqlens=cu_seqlens, max_seqlen=max_seqlen
             ), apply_rotary_emb_func(
                 k, self._cos_cached[seqlen_offset:], self._sin_cached[seqlen_offset:],
-                self.interleaved, True # inplace=True
+                self.interleaved, True, # inplace=True
+                cu_seqlens=cu_seqlens, max_seqlen=max_seqlen
             )
         else:
             assert False
@@ -214,11 +224,12 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
     num_key_value_heads, seqlen, head_dim) to (batch, num_attention_heads, seqlen, head_dim)
     """
-    batch, slen, _, num_key_value_heads, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
-    hidden_states = hidden_states[:, :, :, :, None, :].expand(batch, slen, 2, num_key_value_heads, n_rep, head_dim)
-    return hidden_states.reshape(batch, slen, 2, num_key_value_heads * n_rep, head_dim)
+    final_shape = list(hidden_states.shape[:-2]) + [-1] + [hidden_states.shape[-1]]
+    expand_shape = [-1] * (len(hidden_states.shape) - 1) + [n_rep] + [-1]
+    hidden_states = hidden_states.unsqueeze(-1).expand(expand_shape)
+    return hidden_states.reshape(final_shape)
 
 
 class LlamaAttention(nn.Module):
@@ -261,6 +272,8 @@ class LlamaAttention(nn.Module):
             self.head_dim, base=theta, interleaved=False, scaling_factor=scaling_factor,
         )
 
+        self.distributed_attn_func = flash_attn_kvpacked_func
+
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
 
@@ -284,7 +297,7 @@ class LlamaAttention(nn.Module):
         else:
             past_len = 0
 
-        # hack to include position_ids, assuming they are only increasing per block
+        # NOTE: Hack to include position_ids, assuming they are increasing uniformly per block
         if position_ids is not None:
             past_len += position_ids.min()
 
@@ -295,7 +308,8 @@ class LlamaAttention(nn.Module):
         q = q.view(*q.shape[:-1], self.num_heads, self.head_dim)
         k = k.view(*k.shape[:-1], self.num_key_value_heads, self.head_dim)
         v = v.view(*v.shape[:-1], self.num_key_value_heads, self.head_dim)
-        q, k = self.rotary_emb(q, k, past_len)
+
+        q, k = self.rotary_emb(q, k, past_len, unpadded_lengths)
 
         kv = torch.stack([k, v], -3)
         kv = repeat_kv(kv, self.num_key_value_groups)
@@ -311,14 +325,15 @@ class LlamaAttention(nn.Module):
             past_kv = kv
 
         past_key_value = (past_kv, past_len+q.size(1)) if use_cache else None
+
         if unpadded_lengths is not None:
             # varlen, ignore padding tokens, efficient for large batch with many paddings
             assert attention_mask is not None
-            cu_seqlens = unpadded_lengths[0]
-            max_seqlen = unpadded_lengths[1]
+            cu_seqlens, max_seqlen = unpadded_lengths
 
             attn_outputs = flash_attn_varlen_kvpacked_func(
-                q, kv, cu_seqlens, cu_seqlens,
+                q, kv,
+                cu_seqlens, cu_seqlens,
                 max_seqlen, max_seqlen,
                 dropout_p=0.0, softmax_scale=1.0/self.norm_factor,
                 causal=True, return_attn_probs=output_attentions
@@ -514,8 +529,7 @@ class LlamaModel(LlamaPreTrainedModel):
             unpadded_lengths = (cu_seqlens, max_seqlen)
         else:
             unpadded_lengths = None
-        # unpadded_lengths = None
-        # print(hidden_states.shape)
+
         # decoder layers
         all_hidden_states = () if output_hidden_states else None
         all_self_attns = () if output_attentions else None
@@ -531,20 +545,15 @@ class LlamaModel(LlamaPreTrainedModel):
             past_key_value = past_key_values[idx] if past_key_values is not None else None
 
             if self.gradient_checkpointing and self.training:
-                def create_custom_forward(module):
-                    def custom_forward(*inputs):
-                        # None for past_key_value
-                        return module(*inputs, output_attentions, None)
-
-                    return custom_forward
-
                 layer_outputs = torch.utils.checkpoint.checkpoint(
-                    create_custom_forward(decoder_layer),
+                    decoder_layer,
                     hidden_states,
                     attention_mask,
                     position_ids,
                     None,
-                    unpadded_lengths
+                    unpadded_lengths,
+                    output_attentions,
+                    False,
                 )
             else:
                 layer_outputs = decoder_layer(
@@ -552,9 +561,9 @@ class LlamaModel(LlamaPreTrainedModel):
                     attention_mask=attention_mask,
                     position_ids=position_ids,
                     past_key_value=past_key_value,
+                    unpadded_lengths=unpadded_lengths,
                     output_attentions=output_attentions,
                     use_cache=use_cache,
-                    unpadded_lengths=unpadded_lengths,
                 )
 
             hidden_states = layer_outputs[0]
@@ -626,7 +635,6 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
-        unpadded_lengths: Optional[bool] = None,
         avg_valid_labels_per_chunk: Optional[float] = None,
     ) -> Union[Tuple, CausalLMOutputWithPast]:
         r"""
@@ -721,11 +729,9 @@ class LlamaForCausalLM(LlamaPreTrainedModel):
 
         model_inputs.update(
             {
-                "position_ids": kwargs.get("position_ids", None),
                 "past_key_values": past_key_values,
                 "use_cache": kwargs.get("use_cache"),
                 "attention_mask": attention_mask,
-                "unpadded_lengths": ((attention_mask is not None) and (not attention_mask.all().item())),
             }
         )
         return model_inputs
