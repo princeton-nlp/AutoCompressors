@@ -58,21 +58,37 @@ We implement flash attention via `torch.nn.functional.scaled_dot_product_attenti
 All the fine-tuned models from our paper can be found on Huggingface hub:
 |Link|Base model|Fine-tuning seq. length|Fine-tuning data|#Summary vectors|Summmary accumulation|Randomized segmenting|Softprompt stop gradient|
 |-|-|-|-|-|-|-|-|
-| [princeton-nlp/AutoCompressor-2.7b-6k](https://huggingface.co/princeton-nlp/AutoCompressor-2.7b-6k) | OPT-2.7b | 6144 tokens / seq. in 4 compression steps | 2B tokens across 4 domains from the Pile | 50 / compression step | ✔️ | ✔️ | ✔️ |
-| [princeton-nlp/RMT-2.7b-8k](https://huggingface.co/princeton-nlp/RMT-2.7b-8k) | OPT-2.7b | 8192 tokens / seq. in 4 compression steps | 2B tokens across 4 domains from the Pile | 50 | | | |
-| [princeton-nlp/FullAttention-2.7b-4k](https://huggingface.co/princeton-nlp/FullAttention-2.7b-4k) | OPT-2.7b | 4092 tokens / seq. without compression | 2B tokens from 4 domains from the Pile | - | | | |
-| [princeton-nlp/AutoCompressor-2.7b-30k](https://huggingface.co/princeton-nlp/AutoCompressor-2.7b-30k) | OPT-2.7b | 30720 tokens / seq. in 20 compression steps | 2B tokens from Books3 from the Pile | 50 / compression step | ✔️ | ✔️ | ✔️ |
-| [princeton-nlp/AutoCompressor-1.3b-30k](https://huggingface.co/princeton-nlp/AutoCompressor-1.3b-30k) | OPT-1.3b | 30720 tokens / seq. in 20 compression steps | 2B tokens from Books3 from the Pile | 50 / compression step | ✔️ | ✔️ | ✔️ |
-| [princeton-nlp/AutoCompressor-1.3b-30k](https://huggingface.co/princeton-nlp/RMT-1.3b-30k) | OPT-1.3b | 30720 tokens / seq. in 15 compression steps | 2B tokens from Books3 from the Pile | 50 | | | |
+| [princeton-nlp/AutoCompressor-Llama-2-7b-6k](https://huggingface.co/princeton-nlp/AutoCompressor-Llama-2-7b-6k) | Llama-2-7b | 6144 tokens in 4 compression steps | 15B tokens from RedPajama| 50 |  ✔️ |  ✔️  |  ✔️ |
+| [princeton-nlp/FullAttention-Llama-2-7b-6k](https://huggingface.co/princeton-nlp/FullAttention-Llama-2-7b-6k) | Llama-2-7b | 6144 tokens without compression| 15B tokens from RedPajama | - | | | |
+| [princeton-nlp/AutoCompressor-2.7b-6k](https://huggingface.co/princeton-nlp/AutoCompressor-2.7b-6k) | OPT-2.7b | 6144 tokens in 4 compression steps | 2B tokens from the Pile | 50 | ✔️ | ✔️ | ✔️ |
+| [princeton-nlp/RMT-2.7b-8k](https://huggingface.co/princeton-nlp/RMT-2.7b-8k) | OPT-2.7b | 8192 tokens in 4 compression steps | 2B tokens from the Pile | 50 | | | |
+| [princeton-nlp/FullAttention-2.7b-4k](https://huggingface.co/princeton-nlp/FullAttention-2.7b-4k) | OPT-2.7b | 4092 tokens without compression | 2B tokens from the Pile | - | | | |
+| [princeton-nlp/AutoCompressor-2.7b-30k](https://huggingface.co/princeton-nlp/AutoCompressor-2.7b-30k) | OPT-2.7b | 30720 tokens in 20 compression steps | 2B tokens from Books3 from the Pile | 50 | ✔️ | ✔️ | ✔️ |
+| [princeton-nlp/AutoCompressor-1.3b-30k](https://huggingface.co/princeton-nlp/AutoCompressor-1.3b-30k) | OPT-1.3b | 30720 tokens in 20 compression steps | 2B tokens from Books3 from the Pile | 50 | ✔️ | ✔️ | ✔️ |
+| [princeton-nlp/AutoCompressor-1.3b-30k](https://huggingface.co/princeton-nlp/RMT-1.3b-30k) | OPT-1.3b | 30720 tokens in 15 compression steps | 2B tokens from Books3 from the Pile | 50 | | | |
 
-The models and their tokenizers can be loaded by importing AutoCompressorModel:
+### Loading Models
+
+To load Llama-20based AutoCompressor models, import LlamaAutoCompressModel:
 ```python
 from transformers import AutoTokenizer
-from auto_compressor import AutoCompressorModel
+from auto_compressor import LlamaAutoCompressorModel
+
+tokenizer = AutoTokenizer.from_pretrained("princeton-nlp/AutoCompressor-Llama-2-7b-6k")
+model = LlamaAutoCompressModel.from_pretrained("princeton-nlp/AutoCompressor-Llama-2-7b-6k")
+```
+
+To load OPT-based AutoCompressor models, import OPTAutoCompressorModel:
+```python
+from transformers import AutoTokenizer
+from auto_compressor import OPTAutoCompressorModel
 
 tokenizer = AutoTokenizer.from_pretrained("princeton-nlp/AutoCompressor-2.7b-6k")
-model = AutoCompressorModel.from_pretrained("princeton-nlp/AutoCompressor-2.7b-6k")
+model = OPTAutoCompressorModel.from_pretrained("princeton-nlp/AutoCompressor-2.7b-6k")
 ```
+
+### Summary Vectors
+
 
 The summary vectors for a given context can be obtained in two ways:
 1. **Explicitly:** Call the model with `out = model(input_ids, attention_mask, ..., output_softprompt=True)` and obtain the summary vectors as `summary_vectors = out.softprompt` which can be passed to further calls by `model(..., softprompt=sumary_vectors)`.
