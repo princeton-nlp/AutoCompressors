@@ -10,7 +10,6 @@ import torch
 import transformers
 
 import auto_compressor
-import auto_compressor_llama
 import icl_dataset_loading
 
 def read_args():
@@ -25,10 +24,20 @@ def read_args():
     return args
 
 def get_model_tokenizer_device_isac(args):
+    """
+    Returns a model, tokenizer, device, and is_ac flag.
+
+    args: argparse.Namespace
+
+    returns: model: transformers.AutoModelForCausalLM | auto_compressor.AutoCompressorModel | auto_compressor.LlamaAutoCompressorModel,
+            tokenizer: transformers.PreTrainedTokenizer,
+            device: torch.device,
+            is_ac: bool
+    """
 
     if "autocompressor-llama" in args.model_path.lower(): # LLaMA-2 AC
         print(f"Loading LLaMA-2 AutoCompressorModel from {args.model_path}")
-        model = auto_compressor_llama.LlamaAutoCompressorModel.from_pretrained(args.model_path)
+        model = auto_compressor.LlamaAutoCompressorModel.from_pretrained(args.model_path)
         is_ac = True
 
     elif "autocompressor" in args.model_path.lower(): # OPT AC
@@ -50,7 +59,7 @@ def get_model_tokenizer_device_isac(args):
     return model, tokenizer, device, is_ac
 
 class PromptGenerator(torch.utils.data.Dataset):
-    def __init__(self, dataset,
+    def __init__(self, dataset: dict,
         tokenizer, 
         num_plaintext_demonstrations: int, 
         num_softprompt_demonstrations: List[int], 
@@ -58,11 +67,24 @@ class PromptGenerator(torch.utils.data.Dataset):
         delimiter="\n\n", 
         content_free_string="N/A"
     ):
+        """
+        Initializes a PromptGenerator object.
+
+        Properties:
+        self.dataset: dict
+        self.tokenizer: transformers.PreTrainedTokenizer
+        self.num_plaintext_demonstrations: int
+        self.num_softprompt_demonstrations: list[int]
+        self.delimiter: str
+        self.content_free_string: str
+        self.all_softprompts_demonstrations_tokens: list[torch.Tensor]
+        self.plaintext_demonstrations_tokens: torch.Tensor
+        """
         
         self.dataset = dataset
         self.tokenizer = tokenizer
         self.num_plaintext_demonstrations = num_plaintext_demonstrations # int
-        self.num_softprompt_demonstrations = num_softprompt_demonstrations # list[int]
+        self.num_softprompt_demonstrations = num_softprompt_demonstrations # list[int] 
         self.delimiter = delimiter
         self.content_free_string = content_free_string
 
@@ -79,7 +101,7 @@ class PromptGenerator(torch.utils.data.Dataset):
             staggered_idxs = [idx for sublist in zipped_label_wise_idxs for idx in sublist] 
             num_total_demonstrations = sum(self.num_softprompt_demonstrations) + num_plaintext_demonstrations
             if len(staggered_idxs) < num_total_demonstrations:
-                # repeat the list
+                # repeat the list if there aren't enough examples
                 staggered_idxs = staggered_idxs * (num_total_demonstrations // len(staggered_idxs) + 1)
             start_splice_pos = random.randint(0, len(staggered_idxs) - num_total_demonstrations)
             sample_idxs = staggered_idxs[start_splice_pos:start_splice_pos + num_total_demonstrations]
@@ -89,7 +111,7 @@ class PromptGenerator(torch.utils.data.Dataset):
         softprompt_idxs = sample_idxs[:sum(num_softprompt_demonstrations)]
         plaintext_idxs = sample_idxs[sum(num_softprompt_demonstrations):]
 
-        if sum(self.num_softprompt_demonstrations) > 0:
+        if sum(self.num_softprompt_demonstrations) > 0: # if softprompt demonstrations are needed
 
             # splitting all softprompt demonstrations into chunks based on num_softprompt_demonstrations
             softprompt_examples = self.dataset["train"][softprompt_idxs]
@@ -105,16 +127,27 @@ class PromptGenerator(torch.utils.data.Dataset):
                 chunked_softprompt_demonstrations_tokens.append(softprompt_demonstrations_tokens)
                 chunked_softprompt_demonstration_counts.append(chunked_softprompt_demonstration_count)
                 add_special_tokens = False
-            self.all_softprompts_demonstrations_tokens = chunked_softprompt_demonstrations_tokens # list
-            self.num_softprompt_demonstrations = chunked_softprompt_demonstration_counts # list (revised)
+            self.all_softprompts_demonstrations_tokens = chunked_softprompt_demonstrations_tokens # list of torch.Tensor
+            self.num_softprompt_demonstrations = chunked_softprompt_demonstration_counts # revised list of int
             
-        if self.num_plaintext_demonstrations > 0:
+        if self.num_plaintext_demonstrations > 0: # if plaintext demonstrations are needed
             plaintext_examples = self.dataset["train"][plaintext_idxs]
             plaintext_examples = [dict(zip(plaintext_examples, i)) for i in zip(*plaintext_examples.values())] # unzip dict
             self.plaintext_demonstrations_tokens, self.num_plaintext_demonstrations = \
                 self.get_demonstrations_tokens(plaintext_examples, add_special_tokens=(sum(self.num_softprompt_demonstrations) == 0))
 
-    def get_demonstration_string(self, example, label=None, include_label=True, for_calibration=False):
+    def get_demonstration_string(self, example: dict, label=None, include_label=True, for_calibration=False) -> str:
+        """
+        Returns a demonstration string for a given example.
+
+        example: dict
+        label: int
+        include_label: bool
+        for_calibration: bool
+
+        returns: str
+        """
+
         example = copy.deepcopy(example)
         example["label"] = label if label is not None else example["label"]     # override label
         example["answer"] = example["options"][example["label"]] if include_label else ""
@@ -125,7 +158,16 @@ class PromptGenerator(torch.utils.data.Dataset):
         demonstration_string = self.dataset["template"].format(**example).rstrip()
         return demonstration_string
         
-    def get_demonstrations_tokens(self, examples, add_special_tokens, max_tokens=float('inf')):
+    def get_demonstrations_tokens(self, examples: list, add_special_tokens: bool, max_tokens=float('inf')):
+        """
+        Tokenizes demonstrations and returns the tokens and the number of examples that were used to create them (constrained by max_tokens).
+
+        examples: list of dicts
+        add_special_tokens: bool
+        max_tokens: int
+
+        returns: demonstrations_tokens: torch.Tensor, num_examples: int
+        """
         demonstrations_string = ""
         num_examples = 0
         
@@ -144,7 +186,19 @@ class PromptGenerator(torch.utils.data.Dataset):
         demonstrations_tokens = self.tokenizer.encode(demonstrations_string, add_special_tokens=add_special_tokens, return_tensors="pt")
         return demonstrations_tokens, num_examples
     
-    def get_calibration_nlls(self, example, model, device, is_ac, softprompt=None, plaintext_demonstrations_tokens=None):
+    def get_calibration_nlls(self, example: dict, model, device, is_ac: bool, softprompt=None, plaintext_demonstrations_tokens=None):
+        """
+        Computes the calibration NLLs for a given example.
+
+        example: dict
+        model: transformers.AutoModelForCausalLM | auto_compressor.AutoCompressorModel | auto_compressor.LlamaAutoCompressorModel
+        device: torch.device
+        is_ac: bool
+        softprompt: torch.Tensor
+        plaintext_demonstrations_tokens: torch.Tensor
+
+        returns: calibration_nlls: torch.Tensor
+        """
         assert (sum(self.num_softprompt_demonstrations) == 0) or (softprompt is not None)
         assert (self.num_plaintext_demonstrations == 0) or (plaintext_demonstrations_tokens is not None)
         add_special_tokens = ((self.num_plaintext_demonstrations + sum(self.num_softprompt_demonstrations)) == 0)
@@ -173,7 +227,18 @@ class PromptGenerator(torch.utils.data.Dataset):
     def __len__(self):
         return len(self.dataset["test"])
     
-    def __getitem__(self, index):
+    def __getitem__(self, index: int) -> dict:
+        """
+        Returns a dictionary containing the following keys:
+            answered_example_options: list of torch.Tensor 
+            answer_options: list of torch.Tensor
+            answer_idx: int
+            test_example: dict
+
+        index: int
+
+        returns: dict
+        """
         test_example = self.dataset["test"][index]
         add_special_tokens = ((self.num_plaintext_demonstrations + sum(self.num_softprompt_demonstrations)) == 0)
 
@@ -190,10 +255,10 @@ class PromptGenerator(torch.utils.data.Dataset):
             options_tokens.append(option_tokens)
 
         return_dict = {
-            "answered_example_options": answered_example_options_tokens,
-            "answer_options": options_tokens,
-            "answer_idx": test_example["label"],
-            "test_example": test_example
+            "answered_example_options": answered_example_options_tokens, # full answered demonstration alternatives
+            "answer_options": options_tokens, # just the answers' alternatives
+            "answer_idx": test_example["label"], # correct answer index
+            "test_example": test_example # original test example
         }
 
         return return_dict
@@ -214,7 +279,7 @@ def main(args):
         seed=args.seed
     )
 
-    # create softprompt
+    # create softprompt if needed
     if use_softprompt:
         softprompt = None
         for softprompt_demonstrations_tokens in prompt_generator.all_softprompts_demonstrations_tokens:

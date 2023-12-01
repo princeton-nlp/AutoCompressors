@@ -128,10 +128,8 @@ def get_dataset(args):
         balanced_sampling = True
 
     elif args.dataset == "subj":
-        with open("/scratch/gpfs/aa8052/subj.pkl", "rb") as f:
-       	    dataset = pickle.load(f)
-        train_dataset = dataset["train"]
-        test_dataset = dataset["test"]
+        train_dataset = datasets.load_dataset("SetFit/subj")["train"]
+        test_dataset = datasets.load_dataset("SetFit/subj")["test"]
         options = ["objective", "subjective"]
         template = "input: {text}\ntype: {answer}"
 
