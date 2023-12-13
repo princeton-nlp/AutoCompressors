@@ -45,7 +45,11 @@ print("Generation w/o context:\n" + tokenizer.decode(next_tokens_without_context
 Setup a new environment and install the most recent version of [pytorch](https://pytorch.org/),
 followed by these libraries
 ```bash
+pip install packaging
 pip install transformers==4.35.0 datasets==2.14.4 sentencepiece==0.1.99 flash-attn==2.3.3 wandb
+# Flash rotary embeddings (requires setting correct CUDA_HOME variable)
+pip install git+https://github.com/Dao-AILab/flash-attention.git#subdirectory=csrc/rotary
+
 ```
 
 ### Training
