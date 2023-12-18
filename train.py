@@ -45,6 +45,7 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    training_args.find_unused_parameters = True
 
     # Setup logging
     logging.basicConfig(
@@ -161,7 +162,7 @@ def main():
 
     # Create model
     if "llama" in (model_args.model_name_or_path or model_args.config_name).lower():
-        from auto_compressor_llama import LlamaAutoCompressorModel
+        from auto_compressor import LlamaAutoCompressorModel
     else:
         from auto_compressor import AutoCompressorModel
 
@@ -282,5 +283,18 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    from torch.distributed.elastic.multiprocessing.errors import get_error_handler, ChildFailedError
+    error_handler = get_error_handler()
+    error_handler.initialize()
+    try:
+        main()
+    except ChildFailedError as e:
+        _, failure = e.get_first_failure()
+        print(failure.error_file)
+        error_handler.dump_error_file(failure.error_file, failure.exitcode)
+        raise
+    except Exception as e:
+        error_handler.record(e)
+        raise
+
 
