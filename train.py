@@ -283,18 +283,5 @@ def main():
 
 
 if __name__ == "__main__":
-    from torch.distributed.elastic.multiprocessing.errors import get_error_handler, ChildFailedError
-    error_handler = get_error_handler()
-    error_handler.initialize()
-    try:
-        main()
-    except ChildFailedError as e:
-        _, failure = e.get_first_failure()
-        print(failure.error_file)
-        error_handler.dump_error_file(failure.error_file, failure.exitcode)
-        raise
-    except Exception as e:
-        error_handler.record(e)
-        raise
-
+    main()
 
