@@ -99,7 +99,10 @@ arguments=(
 )
 
 echo "Training on 6K token sequences"
-arguments+=(--preprocessed_train_datasets /scratch/gpfs/awettig/redpajama-weighted-llama6144tokens/*-train)
+arguments+=(--preprocessed_train_datasets awettig/RedPajama-combined-15B-6K-llama)
+
+#echo "Training on 8K token sequences"
+#arguments+=(--preprocessed_train_datasets awettig/RedPajama-combined-15B-8K-llama)
 
 #################
 
