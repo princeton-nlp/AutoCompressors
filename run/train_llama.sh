@@ -7,7 +7,7 @@ bs=${SEQ:-2}            # batch size per device
 lr=${LR:-8e-4}
 warmup_steps=${WU:-5000}
 save_steps=${SAVE:-5000}
-num_gpus=${NUM_GPUS:-4}
+num_gpus=${NUM_GPUS:-1}
 segments_per_substep=${SEG:-2}
 training_substeps=${SUB:-2}
 summary_length=${SUM:-50}
@@ -99,7 +99,10 @@ arguments=(
 )
 
 echo "Training on 6K token sequences"
-arguments+=(--preprocessed_train_datasets /scratch/gpfs/awettig/redpajama-weighted-llama6144tokens/*-train)
+arguments+=(--preprocessed_train_datasets awettig/RedPajama-combined-15B-6K-llama)
+
+#echo "Training on 8K token sequences"
+#arguments+=(--preprocessed_train_datasets awettig/RedPajama-combined-15B-8K-llama)
 
 #################
 

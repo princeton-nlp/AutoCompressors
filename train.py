@@ -161,7 +161,7 @@ def main():
 
     # Create model
     if "llama" in (model_args.model_name_or_path or model_args.config_name).lower():
-        from auto_compressor_llama import LlamaAutoCompressorModel
+        from auto_compressor import LlamaAutoCompressorModel
     else:
         from auto_compressor import AutoCompressorModel
 
