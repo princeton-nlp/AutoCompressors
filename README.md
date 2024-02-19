@@ -42,15 +42,15 @@ print("Generation w/o context:\n" + tokenizer.decode(next_tokens_without_context
 ```
 
 ### Install
-Setup a new environment and install the most recent version of [pytorch](https://pytorch.org/),
+Setup a new environment and install [pytorch](https://pytorch.org/) version 2.1.0,
 followed by these libraries
 ```bash
 pip install packaging
-pip install transformers==4.35.0 datasets==2.14.4 sentencepiece==0.1.99 flash-attn==2.3.3 wandb
+pip install transformers==4.34.0 datasets==2.13.4 accelerate==0.24.1 sentencepiece==0.1.99 flash-attn==2.3.5 wandb
 # Flash rotary embeddings (requires setting correct CUDA_HOME variable)
 pip install git+https://github.com/Dao-AILab/flash-attention.git#subdirectory=csrc/rotary
-
 ```
+Then clone this repo and navigate to the repository root to run scripts or import the libraries.
 
 ### Training
 `train.sh` is the main method for training AutoCompressors and defines the most important hyperparameters for `train.py`.
