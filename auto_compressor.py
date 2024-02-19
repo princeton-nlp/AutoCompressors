@@ -69,7 +69,6 @@ class AutoCompressorMixin:
 
         bsz = segment_embeds.size(0)
         summary_length = summary_token_embeds.size(1)
-
         if past_key_values_softprompt_length > 0: # Softprompt should already be in past_key_values
             softprompt_length = 0
             segment_embeds = torch.cat([segment_embeds, summary_token_embeds], dim=1)
@@ -90,8 +89,7 @@ class AutoCompressorMixin:
                 segment_attention_mask,
                 torch.ones(bsz, summary_length, device=device, dtype=attn_dtype)
             ], dim=1)
-
-
+        
         def decoder(segment_embeds,
                     segment_attention_mask,
                     segment_past_key_values,
@@ -170,7 +168,7 @@ class AutoCompressorMixin:
 
         if self.config.summary_length > 0:
             summary_token_ids = torch.arange(self.config.summary_length, dtype=torch.long, device=inputs_embeds.device).unsqueeze(0).expand(inputs_embeds.size(0), -1)
-            summary_token_embeds = self.embed_summary(summary_token_ids)
+            summary_token_embeds = self.embed_summary(summary_token_ids).to(inputs_embeds.dtype)
         else:
             summary_token_embeds = inputs_embeds[:,:0]
 
@@ -223,7 +221,7 @@ class AutoCompressorMixin:
             )
 
             outputs, segment_hidden_states, new_softprompt = self.forward_segment(
-                softprompt, inputs_embeds_list[step], summary_token_embeds, attention_mask_list[step],
+                softprompt.to(inputs_embeds.dtype), inputs_embeds_list[step], summary_token_embeds, attention_mask_list[step],
                 past_key_values, output_hidden_states, use_cache, output_attentions,
                 segment_gradient_checkpointing, past_key_values_softprompt_length)
 

@@ -162,12 +162,13 @@ def main():
     # Create model
     if "llama" in (model_args.model_name_or_path or model_args.config_name).lower():
         from auto_compressor import LlamaAutoCompressorModel
+        AutoCompressorModel = LlamaAutoCompressorModel
     else:
         from auto_compressor import AutoCompressorModel
 
     if model_args.model_name_or_path:
         half_dtype = (torch.bfloat16 if training_args.bf16 else (torch.float16 if training_args.fp16 else None))
-        model = LlamaAutoCompressorModel.from_pretrained(
+        model = AutoCompressorModel.from_pretrained(
             model_args.model_name_or_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,
@@ -177,7 +178,7 @@ def main():
             torch_dtype=(half_dtype if model_args.lora or model_args.lora_path else None),
         )
     else:
-        model = LlamaAutoCompressorModel.from_config(config)
+        model = AutoCompressorModel.from_config(config)
         n_params = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters()).values())
         logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
 
