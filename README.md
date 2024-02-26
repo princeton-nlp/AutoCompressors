@@ -1,4 +1,4 @@
-# Adapting Language Models to Compress Long Contexts
+# Adapting Language Models to Compress Long Contexts (EMNLP'23)
 
 This is the official implementation of the paper [Adapting Language Models to Compress Long Contexts](https://arxiv.org/abs/2305.14788), in which we train *AutoCompressors* which are language models with the new capability to (1) compress context information into a small set of summary vectors and (2) reason over these summary vectors which are passed to the model as soft prompts.
 
@@ -111,10 +111,22 @@ Please try to specify the problem with detail so we can help you quickly!
 
 ## Citation
 ```bibtex
-@article{chevalier2023adapting,
-   title={Adapting Language Models to Compress Contexts},
-   author={Chevalier, Alexis and Wettig, Alexander and Ajith, Anirudh and Chen, Danqi},
-   journal={arXiv preprint 2305.14788},
-   year={2023}
+@inproceedings{chevalier2023adapting,
+    title = "Adapting Language Models to Compress Contexts",
+    author = "Chevalier, Alexis  and
+      Wettig, Alexander  and
+      Ajith, Anirudh  and
+      Chen, Danqi",
+    editor = "Bouamor, Houda  and
+      Pino, Juan  and
+      Bali, Kalika",
+    booktitle = "Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing",
+    month = dec,
+    year = "2023",
+    address = "Singapore",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2023.emnlp-main.232",
+    doi = "10.18653/v1/2023.emnlp-main.232",
+    pages = "3829--3846"
 }
 ```
