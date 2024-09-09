@@ -125,7 +125,7 @@ def preprocess_datasets(raw_datasets, tokenizer, data_args, training_args):
                 num_proc=data_args.preprocessing_num_workers,
                 remove_columns=column_names,
                 load_from_cache_file=not data_args.overwrite_cache,
-                desc="Toknenzing texts...",
+                desc="Tokenizing texts...",
             )
 
     if data_args.block_size is None:
